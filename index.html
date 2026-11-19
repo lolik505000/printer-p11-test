@@ -66,6 +66,7 @@ pre{margin:0;max-height:110px;overflow:auto;font-size:11px;white-space:pre-wrap}
       <label>Зазор, мм<input id="gap" type="number" min="0" max="10" step="0.5" value="2"></label>
       <label>Плотность<input id="dens" type="number" min="1" max="15" value="8"></label>
       <label>Копий<input id="cnt" type="number" min="1" max="99" value="1"></label>
+      <label>DPI принтера<input id="dpi" type="number" min="100" max="600" value="203"></label>
     </div>
     <label class="ck"><input id="inv" type="checkbox"> Инвертировать (если печатает негатив)</label>
     <h3>Пресеты</h3>
@@ -120,9 +121,9 @@ $('#un').onclick=doUndo;
 const bb=e=>[e.x,e.y,e._w||e.w,e._h||e.h];
 const H=[[-1,-1],[0,-1],[1,-1],[1,0],[1,1],[0,1],[-1,1],[-1,0]];
 const CURS=['nwse','ns','nesw','ew','nwse','ns','nesw','ew'].map(c=>c+'-resize');
-function render(c,sel){
+function render(c,sc=1){
   const x=c.getContext('2d');
-  x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);
+  x.setTransform(1,0,0,1,0,0);x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.setTransform(sc,0,0,sc,0,0);
   x.fillStyle='#000';x.strokeStyle='#000';x.textBaseline='top';x.textAlign='left';
   S.els.forEach(e=>{
     if(e.hidden)return;
@@ -366,30 +367,44 @@ addEventListener('pagehide',stopEdit);
 });
 
 /* ---------- Bluetooth ---------- */
-const SV=[0xff00,0xffe0,0xfee7,0xae00,0x18f0,0xfff0,0xff10,'49535343-fe7d-4ae5-8fa9-9fafd205e455','e7810a71-73ae-499d-8c15-faa9aef0c3f2'];
+const U=n=>typeof n==='number'?`0000${n.toString(16).padStart(4,'0')}-0000-1000-8000-00805f9b34fb`:n;
+const SV=[0xff00,0xffe0,0xfee7,0xae00,0x18f0,0xfff0,0xff10,'49535343-fe7d-4ae5-8fa9-9fafd205e455','e7810a71-73ae-499d-8c15-faa9aef0c3f2'].map(U);
+const er=e=>[e&&e.name,e&&e.message,e&&!e.message&&!e.name?String(e):''].filter(Boolean).join(': ')||'неизвестная ошибка';
 let ch=null;
 $('#bc').onclick=async()=>{
-  if(!navigator.bluetooth){log('Печать работает в Chrome и Edge (ПК, Android). В Firefox и на iPhone Web Bluetooth нет, но редактор доступен.');return}
+  if(!navigator.bluetooth){log('Печать работает в Chrome и Edge (ПК, Android) и в Bluefy на iPhone. Здесь Web Bluetooth нет, но редактор доступен.');return}
+  let stage='выбор устройства';
   try{
     st('Подключение…');ch=null;
     const dev=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:SV});
+    log('Выбрано: '+(dev.name||dev.id));
     dev.addEventListener('gattserverdisconnected',()=>{ch=null;st('Отключён')});
+    stage='подключение к GATT';
     const srv=await dev.gatt.connect();
-    for(const s of await srv.getPrimaryServices()){
+    stage='поиск служб';
+    let svs=[];
+    try{svs=await srv.getPrimaryServices()}catch(e){log('Список служб не получен ('+er(e)+'), проверяю по одной')}
+    if(!svs.length)for(const u of SV){try{svs.push(await srv.getPrimaryService(u))}catch(e){}}
+    log('Найдено служб: '+svs.length);
+    stage='чтение характеристик';
+    for(const s of svs){
       log('Сервис '+s.uuid);
-      for(const c of await s.getCharacteristics()){
+      let cs=[];
+      try{cs=await s.getCharacteristics()}catch(e){log('  не удалось прочитать: '+er(e));continue}
+      for(const c of cs){
         const p=c.properties;log('  '+c.uuid+'  write='+p.write+'  noResp='+p.writeWithoutResponse);
         if(!ch&&(p.write||p.writeWithoutResponse))ch=c;
       }
     }
     if(!ch)throw new Error('не найдена характеристика для записи (пришли этот лог)');
-    st('Подключён: '+dev.name);
-  }catch(e){log('Ошибка подключения: '+e.message);st('Не подключён')}
+    st('Подключён: '+(dev.name||''));
+  }catch(e){log('Ошибка ['+stage+']: '+er(e));st('Не подключён')}
 };
 
 /* ---------- печать (TSPL, растр) ---------- */
 function job(){
-  const o=document.createElement('canvas');o.width=cv.width;o.height=cv.height;render(o,false);
+  const dpi=+$('#dpi').value||203,sc=dpi/25.4/DPM,o=document.createElement('canvas');
+  o.width=Math.round(S.w*dpi/25.4);o.height=Math.round(S.h*dpi/25.4);render(o,sc);
   const W=o.width,Hh=o.height,wb=Math.ceil(W/8),d=o.getContext('2d').getImageData(0,0,W,Hh).data,inv=$('#inv').checked;
   const bm=new Uint8Array(wb*Hh).fill(inv?0:255);
   for(let y=0;y<Hh;y++)for(let x=0;x<W;x++){
@@ -405,7 +420,7 @@ function job(){
 async function send(u){
   for(let i=0;i<u.length;i+=100){
     const p=u.slice(i,i+100);
-    if(ch.properties.writeWithoutResponse)await ch.writeValueWithoutResponse(p);else await ch.writeValue(p);
+    if(ch.properties.writeWithoutResponse&&ch.writeValueWithoutResponse)await ch.writeValueWithoutResponse(p);else await ch.writeValue(p);
     await new Promise(r=>setTimeout(r,15));
   }
 }
@@ -464,6 +479,7 @@ const c0=Store.get('lp_cur',null);
 if(c0&&Array.isArray(c0.els)){S.w=c0.w;S.h=c0.h;S.gap=c0.gap;S.els=c0.els}
 else S.els.push({type:'text',text:'Привет',x:8,y:8,size:36,font:'Arial',bold:true,italic:false});
 $('#w').value=S.w;$('#h').value=S.h;$('#gap').value=S.gap;
+$('#dpi').value=Store.get('lp_dpi',203);$('#dpi').onchange=()=>Store.set('lp_dpi',+$('#dpi').value||203);
 resize();props();listP();cur=snap();ub();
 </script>
 </body>
