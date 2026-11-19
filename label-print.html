@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Печать этикеток</title>
+<style>
+:root{--bg:#eceae4;--fg:#1d1d1b;--card:#fbfaf7;--bd:#cfccc3;--ac:#0f6b5c;--acf:#fff}
+@media(prefers-color-scheme:dark){:root{--bg:#161615;--fg:#e8e6e0;--card:#222220;--bd:#3a3935;--ac:#3fb9a3;--acf:#0b1d19}}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.4 "Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--fg)}
+header{position:sticky;top:0;z-index:5;display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid var(--bd);background:var(--card)}
+header b{font-size:16px;margin-right:auto}
+#st{font-size:12px;font-weight:600}
+main{display:grid;grid-template-columns:240px minmax(0,1fr) 240px;gap:12px;padding:12px;align-items:start}
+@media(max-width:1000px){main{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}#cs{grid-column:1/-1;order:-1}}
+@media(max-width:640px){main{grid-template-columns:minmax(0,1fr);padding:8px}#cs{order:1}#es{order:2}#ls{order:3}}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px;min-width:0}
+h3{margin:0;font-size:13px}
+label{display:flex;flex-direction:column;gap:2px;font-size:12px}
+label.ck{flex-direction:row;align-items:center;gap:6px}
+input,select,textarea,button{font:inherit;color:inherit;background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:5px 8px;min-height:34px}
+button{cursor:pointer}
+button:hover:not(:disabled){border-color:var(--ac)}
+button:disabled{opacity:.4;cursor:default}
+button.p{background:var(--ac);color:var(--acf);border-color:var(--ac);font-weight:600}
+:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
+@media(pointer:coarse){input,select,button{min-height:44px}}
+.row{display:flex;gap:6px;flex-wrap:wrap}
+.row>label{flex:1;min-width:60px}
+.stage{overflow:auto;background:repeating-conic-gradient(var(--bd) 0 25%,transparent 0 50%) 0 0/16px 16px;border-radius:6px;padding:10px 10px 56px;display:flex;justify-content:center}
+#wr{position:relative;flex:none}
+canvas{display:block;background:#fff;box-shadow:0 0 0 1px #0004,0 6px 18px #0003;touch-action:none}
+#ov{position:absolute;left:0;top:0;pointer-events:none;background:transparent;box-shadow:none}
+#ly{max-height:190px;overflow:auto}
+.ly{display:flex;align-items:center;gap:2px;padding:1px 4px;border:1px solid transparent;border-radius:6px;cursor:pointer}
+.ly.on{border-color:var(--ac);background:var(--bg)}
+.ly .n{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ly button{padding:0 4px;min-height:28px;min-width:28px;border:0;background:transparent}
+@media(pointer:coarse){.ly button{min-height:38px;min-width:38px}}
+#tr{display:none;position:absolute;z-index:3;width:36px;height:36px;min-height:0;padding:0;border-radius:50%;background:#c62828;color:#fff;border:2px solid #fff;font-size:16px}
+@media(pointer:coarse){#tr.on{display:block}}
+.pr{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid var(--bd)}
+.pr span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.pr button{padding:2px 8px;min-height:30px}
+small{opacity:.7}
+pre{margin:0;max-height:110px;overflow:auto;font-size:11px;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<header>
+  <b>Печать этикеток</b>
+  <span id="st">Не подключён</span>
+  <button id="un" title="Отмена (Ctrl+Z)" disabled>↶ Отмена</button>
+  <button id="bc">Подключить принтер</button>
+  <button id="bp" class="p">Печать</button>
+</header>
+<main>
+  <section class="card" id="ls">
+    <h3>Этикетка</h3>
+    <div class="row">
+      <label>Ширина, мм<input id="w" type="number" min="10" max="108" value="40"></label>
+      <label>Высота, мм<input id="h" type="number" min="5" max="300" value="30"></label>
+    </div>
+    <div class="row">
+      <label>Зазор, мм<input id="gap" type="number" min="0" max="10" step="0.5" value="2"></label>
+      <label>Плотность<input id="dens" type="number" min="1" max="15" value="8"></label>
+      <label>Копий<input id="cnt" type="number" min="1" max="99" value="1"></label>
+    </div>
+    <label class="ck"><input id="inv" type="checkbox"> Инвертировать (если печатает негатив)</label>
+    <h3>Пресеты</h3>
+    <small>Хранятся в этом браузере сами. Экспорт нужен, чтобы передать другим.</small>
+    <button id="ps">Сохранить текущий как пресет</button>
+    <div id="pl"></div>
+    <div class="row"><button id="pe">Экспорт всех</button><button id="pi">Импорт</button></div>
+    <input id="pf" type="file" accept=".json,application/json" hidden>
+  </section>
+
+  <section class="card" id="cs">
+    <div class="row">
+      <button id="at">+ Текст</button><button id="al">+ Линия</button><button id="ar">+ Рамка</button><button id="ai">+ Картинка</button>
+      <input id="if" type="file" accept="image/*" hidden>
+    </div>
+    <div class="stage" id="sg"><div id="wr"><canvas id="cv"></canvas><canvas id="ov"></canvas><button id="tr" title="Удалить">🗑</button></div></div>
+    <small>Клик выбирает верхний слой, двойной клик — слой под ним (если под ним ничего нет, текст открывается для правки; Enter тоже правит). Картинку можно перетащить на холст или вставить через Ctrl+V. Ctrl+C / Ctrl+V копирует элементы.</small>
+    <pre id="lg"></pre>
+  </section>
+
+  <section class="card" id="es"><h3>Слои</h3><div id="ly"></div><h3>Элемент</h3><div id="pp" class="row" style="flex-direction:column"></div></section>
+</main>
+
+<script>
+const $=s=>document.querySelector(s),DPM=8,FONTS=['Arial','Verdana','Courier New','Times New Roman','Impact'];
+const S={w:40,h:30,gap:2,els:[],sel:-1};
+const cv=$('#cv'),ov=$('#ov'),wr=$('#wr'),tr=$('#tr');
+let K=2,edit=null,mode=null;
+const esc=t=>String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+const rep=(k,v)=>k[0]==='_'?undefined:v;
+const log=t=>{const l=$('#lg');l.textContent+=t+'\n';l.scrollTop=l.scrollHeight};
+const st=t=>$('#st').textContent=t;
+
+/* Хранилище: позже его можно заменить на сервер, остальной код не изменится */
+const Store={
+  get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},
+  set(k,v){try{localStorage.setItem(k,typeof v==='string'?v:JSON.stringify(v));return 1}catch(e){log('Не удалось сохранить в браузере: память заполнена.');return 0}}
+};
+try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
+
+/* ---------- отмена (5 шагов) ---------- */
+let undo=[],cur='';
+const snap=()=>JSON.stringify({w:S.w,h:S.h,gap:S.gap,els:S.els},rep);
+const ub=()=>$('#un').disabled=!undo.length;
+function commit(){const s=snap();if(s===cur)return;if(cur){undo.push(cur);if(undo.length>5)undo.shift()}cur=s;Store.set('lp_cur',s);ub()}
+function apply(s){const o=typeof s==='string'?JSON.parse(s):s;S.w=o.w;S.h=o.h;S.gap=o.gap;S.els=o.els;S.sel=-1;
+  $('#w').value=S.w;$('#h').value=S.h;$('#gap').value=S.gap;resize();props()}
+function doUndo(){if(!undo.length)return;stopEdit();cur=undo.pop();apply(cur);Store.set('lp_cur',cur);ub()}
+$('#un').onclick=doUndo;
+
+/* ---------- рисование ---------- */
+const bb=e=>[e.x,e.y,e._w||e.w,e._h||e.h];
+const H=[[-1,-1],[0,-1],[1,-1],[1,0],[1,1],[0,1],[-1,1],[-1,0]];
+const CURS=['nwse','ns','nesw','ew','nwse','ns','nesw','ew'].map(c=>c+'-resize');
+function render(c,sel){
+  const x=c.getContext('2d');
+  x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);
+  x.fillStyle='#000';x.strokeStyle='#000';x.textBaseline='top';x.textAlign='left';
+  S.els.forEach(e=>{
+    if(e.hidden)return;
+    if(e.type==='text'){
+      x.font=`${e.italic?'italic ':''}${e.bold?'bold ':''}${e.size}px "${e.font}"`;
+      const ls=e.text.split('\n');
+      if(!e._hide)ls.forEach((l,j)=>x.fillText(l,e.x,e.y+j*e.size*1.15));
+      e._w=Math.max(8,...ls.map(l=>x.measureText(l).width));e._h=ls.length*e.size*1.15;
+    }else if(e.type==='rect'){
+      if(e.fill)x.fillRect(e.x,e.y,e.w,e.h);
+      else{x.lineWidth=e.lw;x.strokeRect(e.x+e.lw/2,e.y+e.lw/2,e.w-e.lw,e.h-e.lw)}
+    }else if(e.type==='image'){
+      if(!e._img){e._img=new Image();e._img.onload=draw;e._img.src=e.src}
+      if(e._img.complete)x.drawImage(e._img,e.x,e.y,e.w,e.h);
+    }
+  });
+}
+function drawOv(){
+  const x=ov.getContext('2d'),d=window.devicePixelRatio||1,e=S.els[S.sel];
+  x.setTransform(d,0,0,d,0,0);x.clearRect(0,0,ov.width,ov.height);
+  if(!e||e.hidden)return;
+  const[a,b,w,h]=bb(e),L=Math.round(a*K)+.5,T=Math.round(b*K)+.5,R=Math.round((a+w)*K)+.5,B=Math.round((b+h)*K)+.5;
+  x.strokeStyle='#2a6df4';x.lineWidth=1;x.strokeRect(L,T,R-L,B-T);
+  if(e.locked||edit)return;
+  x.fillStyle='#fff';x.lineWidth=1.5;
+  H.forEach(([p,q])=>{
+    const px=Math.round(L+(p+1)/2*(R-L)),py=Math.round(T+(q+1)/2*(B-T));
+    x.beginPath();x.roundRect(px-4,py-4,8,8,2);x.fill();x.stroke();
+  });
+}
+function place(){
+  const e=S.els[S.sel];
+  if(!e||edit||e.hidden){tr.classList.remove('on');return}
+  const[a,b,w,h]=bb(e);tr.classList.add('on');
+  tr.style.left=Math.min(Math.max((a+w)*K-18,0),cv.width*K-36)+'px';
+  tr.style.top=(b*K-46>=0?b*K-46:(b+h)*K+10)+'px';
+}
+function draw(){render(cv);drawOv();place()}
+function fit(){
+  K=Math.max(.2,Math.min(4,($('#sg').clientWidth-22)/cv.width));
+  const d=window.devicePixelRatio||1,ow=cv.width*K,oh=cv.height*K;
+  cv.style.width=ow+'px';cv.style.height=oh+'px';wr.style.width=ow+'px';
+  ov.width=Math.round(ow*d);ov.height=Math.round(oh*d);ov.style.width=ow+'px';ov.style.height=oh+'px';draw();
+}
+function resize(){cv.width=Math.round(S.w*DPM);cv.height=Math.round(S.h*DPM);fit()}
+new ResizeObserver(fit).observe($('#sg'));
+
+/* ---------- панель элемента ---------- */
+function props(){
+  layers();
+  const e=S.els[S.sel],p=$('#pp');
+  if(!e){p.innerHTML='<i>Выбери элемент на холсте или добавь новый.</i>';return}
+  const n=(k,l)=>`<label>${l}<input type="number" data-k="${k}" value="${Math.round(e[k])}"></label>`;
+  const c=(k,l)=>`<label class="ck"><input type="checkbox" data-k="${k}" ${e[k]?'checked':''}> ${l}</label>`;
+  let h='';
+  if(e.type==='text')h+=`<label>Текст<textarea data-k="text" rows="3">${esc(e.text)}</textarea></label>`+n('size','Размер, точек')
+    +`<label>Шрифт<select data-k="font">${FONTS.map(f=>`<option ${f===e.font?'selected':''}>${f}</option>`).join('')}</select></label>`+c('bold','Жирный')+c('italic','Курсив')+'<button id="ed">✎ Править на холсте</button>';
+  else{h+=n('w','Ширина')+n('h','Высота')+c('lock','🔗 Сохранять пропорции');if(e.type==='rect')h+=n('lw','Толщина рамки')+c('fill','Заливка')}
+  h+=n('x','X')+n('y','Y')+'<button id="del">Удалить элемент</button>';
+  p.innerHTML=h;
+  p.querySelectorAll('[data-k]').forEach(i=>{
+    i.oninput=()=>{
+      const k=i.dataset.k;
+      e[k]=i.type==='checkbox'?i.checked:i.type==='number'?(+i.value||0):i.value;
+      if(k==='lock'&&e.lock)e.ar=e.h/e.w;
+      if(e.lock&&(k==='w'||k==='h')){
+        if(k==='w')e.h=Math.round(e.w*e.ar);else e.w=Math.round(e.h/e.ar);
+        p.querySelector('[data-k='+(k==='w'?'h':'w')+']').value=k==='w'?e.h:e.w;
+      }
+      draw();
+    };
+    i.onchange=commit;
+  });
+  $('#del').onclick=delAsk;
+  if($('#ed'))$('#ed').onclick=()=>startEdit(e);
+}
+const del=()=>{S.els.splice(S.sel,1);S.sel=-1;commit();draw();props()};
+const delAsk=()=>{if(S.sel>=0&&confirm('Удалить этот элемент?'))del()};
+tr.onclick=delAsk;
+
+/* ---------- мышь и касания ---------- */
+const pos=ev=>{const r=cv.getBoundingClientRect();return[(ev.clientX-r.left)/K,(ev.clientY-r.top)/K]};
+function hh(x,y){
+  const e=S.els[S.sel];if(!e||e.locked||e.hidden||edit)return -1;
+  const[a,b,w,h]=bb(e),t=12/K;
+  for(let i=0;i<8;i++){const[p,q]=H[i];if(Math.abs(x-(a+(p+1)/2*w))<=t&&Math.abs(y-(b+(q+1)/2*h))<=t)return i}
+  return -1;
+}
+const hit=(e,x,y)=>{
+  const[a,b,w,h]=bb(e);
+  if(x<a-4||x>a+w+4||y<b-4||y>b+h+4)return 0;
+  if(e.type==='rect'&&!e.fill){const m=(e.lw||2)+4;if(x>a+m&&x<a+w-m&&y>b+m&&y<b+h-m)return 0}
+  return 1;
+};
+const hits=(x,y)=>{const r=[];for(let j=S.els.length-1;j>=0;j--){const e=S.els[j];if(!e.hidden&&!e.locked&&hit(e,x,y))r.push(j)}return r};
+let lt=0,lx=0,ly=0;
+cv.onpointerdown=ev=>{
+  stopEdit();
+  const[x,y]=pos(ev),i=hh(x,y);
+  if(i>=0){const e=S.els[S.sel],[a,b,w,h]=bb(e);mode={t:'r',i,a,b,w,h,s:e.size};cv.setPointerCapture(ev.pointerId);return}
+  const hs=hits(x,y),n=Date.now(),dbl=n-lt<350&&Math.hypot(x-lx,y-ly)*K<12;
+  lt=dbl?0:n;lx=x;ly=y;mode=null;
+  let s=hs.length?hs[0]:-1;
+  if(dbl){
+    const k=hs.indexOf(S.sel);
+    if(k>=0&&k+1<hs.length)s=hs[k+1];
+    else if(k>=0&&S.els[S.sel].type==='text'){draw();props();startEdit(S.els[S.sel]);return}
+    else if(k>=0)s=S.sel;
+  }
+  S.sel=s;
+  if(s>=0){const[a,b]=bb(S.els[s]);mode={t:'m',dx:x-a,dy:y-b};cv.setPointerCapture(ev.pointerId)}
+  draw();props();
+};
+
+/* ---------- слои ---------- */
+const IC={text:'T',image:'🖼',rect:'▭'};
+const NM=e=>e.type==='text'?(e.text.trim().slice(0,16)||'Текст'):e.type==='image'?'Картинка':e.fill?(Math.min(e.w,e.h)<=6?'Линия':'Заливка'):'Рамка';
+function mv(i,d){
+  const j=i+d;if(j<0||j>=S.els.length)return;
+  [S.els[i],S.els[j]]=[S.els[j],S.els[i]];
+  if(S.sel===i)S.sel=j;else if(S.sel===j)S.sel=i;
+  commit();draw();props();
+}
+function layers(){
+  const l=$('#ly');l.innerHTML=S.els.length?'':'<i>Пока пусто.</i>';
+  for(let i=S.els.length-1;i>=0;i--){
+    const e=S.els[i],r=document.createElement('div');r.className='ly'+(i===S.sel?' on':'');
+    r.innerHTML=`<span class="n">${IC[e.type]||''} ${esc(NM(e))}</span><button title="Скрыть">${e.hidden?'🚫':'👁'}</button><button title="Закрепить">${e.locked?'🔒':'🔓'}</button><button title="Выше">▲</button><button title="Ниже">▼</button>`;
+    const[bh,bl,bu,bd]=r.querySelectorAll('button');
+    r.onclick=()=>{S.sel=i;draw();props()};
+    bh.onclick=ev=>{ev.stopPropagation();e.hidden=!e.hidden;commit();draw();layers()};
+    bl.onclick=ev=>{ev.stopPropagation();e.locked=!e.locked;commit();draw();layers()};
+    bu.onclick=ev=>{ev.stopPropagation();mv(i,1)};
+    bd.onclick=ev=>{ev.stopPropagation();mv(i,-1)};
+    l.appendChild(r);
+  }
+}
+function rz(e,px,py){
+  const m=mode,[sx,sy]=H[m.i];
+  let nx=m.a,ny=m.b,nw=m.w,nh=m.h;
+  if(sx>0)nw=px-m.a;else if(sx<0){nw=m.a+m.w-px;nx=px}
+  if(sy>0)nh=py-m.b;else if(sy<0){nh=m.b+m.h-py;ny=py}
+  nw=Math.max(4,nw);nh=Math.max(4,nh);
+  if(e.type==='text'||e.lock){
+    const rw=nw/m.w,rh=nh/m.h,s=sx&&sy?(Math.abs(rw-1)>Math.abs(rh-1)?rw:rh):sx?rw:rh;
+    nw=m.w*s;nh=m.h*s;
+    nx=sx<0?m.a+m.w-nw:sx>0?m.a:m.a+(m.w-nw)/2;
+    ny=sy<0?m.b+m.h-nh:sy>0?m.b:m.b+(m.h-nh)/2;
+  }
+  e.x=Math.round(nx);e.y=Math.round(ny);
+  if(e.type==='text')e.size=Math.max(4,Math.round(m.s*nw/m.w));else{e.w=Math.round(nw);e.h=Math.round(nh)}
+}
+cv.onpointermove=ev=>{
+  const[x,y]=pos(ev),e=S.els[S.sel];
+  if(!mode||!e){const i=edit?-1:hh(x,y);cv.style.cursor=i>=0?CURS[i]:'default';return}
+  if(mode.t==='m'){e.x=Math.round(x-mode.dx);e.y=Math.round(y-mode.dy)}else rz(e,x,y);
+  mode.ch=1;draw();
+};
+cv.onpointerup=cv.onpointercancel=()=>{if(mode&&mode.ch){commit();props()}mode=null};
+
+/* ---------- правка текста по двойному клику ---------- */
+function startEdit(e){
+  stopEdit();edit=e;e._hide=true;
+  const t=document.createElement('textarea');t.id='te';t.value=e.text;
+  Object.assign(t.style,{position:'absolute',left:e.x*K+'px',top:e.y*K+'px',font:`${e.italic?'italic ':''}${e.bold?'bold ':''}${e.size*K}px "${e.font}"`,
+    lineHeight:'1.15',color:'#000',background:'#fff',border:'1px dashed #2a6df4',padding:'0',margin:'0',resize:'none',overflow:'hidden',whiteSpace:'pre',zIndex:4,minHeight:'0'});
+  const f=()=>{e.text=t.value;draw();t.style.width=Math.max(60,e._w*K+24)+'px';t.style.height=(t.value.split('\n').length*e.size*1.15*K+4)+'px'};
+  t.oninput=f;t.onblur=stopEdit;t.onkeydown=ev=>{if(ev.key==='Escape')t.blur()};
+  wr.appendChild(t);f();t.focus();t.select();tr.classList.remove('on');
+}
+function stopEdit(){
+  if(!edit)return;
+  const e=edit,t=$('#te');edit=null;e._hide=false;
+  if(t){t.onblur=null;t.remove()}
+  if(!e.text.trim()){S.els.splice(S.els.indexOf(e),1);S.sel=-1}
+  commit();draw();props();
+}
+
+/* ---------- добавление элементов ---------- */
+const add=e=>{S.els.push(e);S.sel=S.els.length-1;commit();draw();props()};
+$('#at').onclick=()=>add({type:'text',text:'Текст',x:8,y:8,size:32,font:'Arial',bold:true,italic:false});
+$('#al').onclick=()=>add({type:'rect',x:0,y:Math.round(cv.height/2),w:cv.width,h:2,lw:2,fill:true,lock:false});
+$('#ar').onclick=()=>add({type:'rect',x:2,y:2,w:cv.width-4,h:cv.height-4,lw:2,fill:false,lock:false});
+$('#ai').onclick=()=>$('#if').click();
+$('#if').onchange=ev=>{[...ev.target.files].forEach(f=>addImg(f));ev.target.value=''};
+function addImg(f,px,py){
+  if(!f.type.startsWith('image/'))return;
+  const u=URL.createObjectURL(f),im=new Image();
+  im.onload=()=>{
+    const k=Math.min(1,900/Math.max(im.width,im.height)),c=document.createElement('canvas'),png=f.type==='image/png';
+    c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);
+    const x=c.getContext('2d');if(!png){x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height)}
+    x.drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(u);
+    const s=Math.min(1,cv.width/c.width,cv.height/c.height),w=Math.round(c.width*s),h=Math.round(c.height*s);
+    add({type:'image',src:c.toDataURL(png?'image/png':'image/jpeg',.85),
+      x:Math.round((px==null?cv.width/2:px)-w/2),y:Math.round((py==null?cv.height/2:py)-h/2),w,h,lock:true,ar:h/w});
+  };
+  im.src=u;
+}
+
+/* ---------- перетаскивание файлов, копирование, вставка, клавиши ---------- */
+document.addEventListener('dragover',ev=>ev.preventDefault());
+document.addEventListener('drop',ev=>{
+  ev.preventDefault();
+  const fs=[...ev.dataTransfer.files].filter(f=>f.type.startsWith('image/'));
+  const[x,y]=pos(ev),ins=x>=0&&y>=0&&x<=cv.width&&y<=cv.height;
+  fs.forEach(f=>addImg(f,ins?x:null,ins?y:null));
+});
+const typing=()=>/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+let pn=0;
+document.addEventListener('copy',ev=>{
+  if(typing()||S.sel<0)return;
+  pn=0;ev.clipboardData.setData('text/plain','label-print:'+JSON.stringify(S.els[S.sel],rep));ev.preventDefault();
+});
+document.addEventListener('paste',ev=>{
+  if(typing())return;
+  const d=ev.clipboardData,f=[...d.files].find(f=>f.type.startsWith('image/'));
+  ev.preventDefault();
+  if(f)return addImg(f);
+  const t=d.getData('text/plain');if(!t)return;
+  if(t.startsWith('label-print:')){
+    try{const e=JSON.parse(t.slice(12));if(!['text','rect','image'].includes(e.type))return;pn++;e.x+=10*pn;e.y+=10*pn;add(e)}catch(_){}
+  }else add({type:'text',text:t.slice(0,300),x:8,y:8,size:32,font:'Arial',bold:false,italic:false});
+});
+document.addEventListener('keydown',ev=>{
+  if(typing())return;
+  if((ev.ctrlKey||ev.metaKey)&&ev.code==='KeyZ'){ev.preventDefault();doUndo()}
+  else if((ev.key==='Delete'||ev.key==='Backspace')&&S.sel>=0){ev.preventDefault();del()}
+  else if(ev.key==='Enter'&&S.sel>=0&&S.els[S.sel].type==='text'&&document.activeElement.tagName!=='BUTTON'){ev.preventDefault();startEdit(S.els[S.sel])}
+  else if((ev.ctrlKey||ev.metaKey)&&ev.code==='BracketRight'&&S.sel>=0){ev.preventDefault();mv(S.sel,1)}
+  else if((ev.ctrlKey||ev.metaKey)&&ev.code==='BracketLeft'&&S.sel>=0){ev.preventDefault();mv(S.sel,-1)}
+  else if(ev.key==='Escape'){S.sel=-1;draw();props()}
+});
+addEventListener('pagehide',stopEdit);
+
+/* ---------- размеры этикетки ---------- */
+['w','h','gap'].forEach(id=>{
+  const i=$('#'+id);
+  i.oninput=()=>{const v=+i.value;if(id==='gap')S.gap=v||0;else if(v>=5){S[id]=v;resize()}};
+  i.onchange=commit;
+});
+
+/* ---------- Bluetooth ---------- */
+const SV=[0xff00,0xffe0,0xfee7,0xae00,0x18f0,0xfff0,0xff10,'49535343-fe7d-4ae5-8fa9-9fafd205e455','e7810a71-73ae-499d-8c15-faa9aef0c3f2'];
+let ch=null;
+$('#bc').onclick=async()=>{
+  if(!navigator.bluetooth){log('Печать работает в Chrome и Edge (ПК, Android). В Firefox и на iPhone Web Bluetooth нет, но редактор доступен.');return}
+  try{
+    st('Подключение…');ch=null;
+    const dev=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:SV});
+    dev.addEventListener('gattserverdisconnected',()=>{ch=null;st('Отключён')});
+    const srv=await dev.gatt.connect();
+    for(const s of await srv.getPrimaryServices()){
+      log('Сервис '+s.uuid);
+      for(const c of await s.getCharacteristics()){
+        const p=c.properties;log('  '+c.uuid+'  write='+p.write+'  noResp='+p.writeWithoutResponse);
+        if(!ch&&(p.write||p.writeWithoutResponse))ch=c;
+      }
+    }
+    if(!ch)throw new Error('не найдена характеристика для записи (пришли этот лог)');
+    st('Подключён: '+dev.name);
+  }catch(e){log('Ошибка подключения: '+e.message);st('Не подключён')}
+};
+
+/* ---------- печать (TSPL, растр) ---------- */
+function job(){
+  const o=document.createElement('canvas');o.width=cv.width;o.height=cv.height;render(o,false);
+  const W=o.width,Hh=o.height,wb=Math.ceil(W/8),d=o.getContext('2d').getImageData(0,0,W,Hh).data,inv=$('#inv').checked;
+  const bm=new Uint8Array(wb*Hh).fill(inv?0:255);
+  for(let y=0;y<Hh;y++)for(let x=0;x<W;x++){
+    const k=(y*W+x)*4;
+    if(d[k]*.3+d[k+1]*.59+d[k+2]*.11<140){const i=y*wb+(x>>3),m=128>>(x&7);if(inv)bm[i]|=m;else bm[i]&=~m}
+  }
+  const en=new TextEncoder();
+  const a=en.encode(`SIZE ${S.w} mm,${S.h} mm\r\nGAP ${S.gap} mm,0 mm\r\nDIRECTION 1\r\nDENSITY ${$('#dens').value}\r\nCLS\r\nBITMAP 0,0,${wb},${Hh},0,`);
+  const b=en.encode(`\r\nPRINT ${$('#cnt').value},1\r\n`);
+  const u=new Uint8Array(a.length+bm.length+b.length);u.set(a);u.set(bm,a.length);u.set(b,a.length+bm.length);
+  return u;
+}
+async function send(u){
+  for(let i=0;i<u.length;i+=100){
+    const p=u.slice(i,i+100);
+    if(ch.properties.writeWithoutResponse)await ch.writeValueWithoutResponse(p);else await ch.writeValue(p);
+    await new Promise(r=>setTimeout(r,15));
+  }
+}
+$('#bp').onclick=async()=>{
+  stopEdit();
+  if(!ch){log('Сначала подключи принтер.');return}
+  try{st('Печать…');await send(job());st('Готово')}catch(e){log('Ошибка печати: '+e.message);st('Ошибка печати')}
+};
+
+/* ---------- пресеты ---------- */
+let P=Store.get('lp',[]);
+const saveP=()=>Store.set('lp',P);
+function listP(){
+  const l=$('#pl');l.innerHTML=P.length?'':'<i>Пока нет пресетов.</i>';
+  P.forEach((p,i)=>{
+    const r=document.createElement('div');r.className='pr';
+    r.innerHTML=`<span title="${esc(p.name)}">${esc(p.name)}</span><button>Открыть</button><button>✕</button>`;
+    const[lo,de]=r.querySelectorAll('button');
+    lo.onclick=()=>{stopEdit();apply(JSON.parse(JSON.stringify(p)));commit()};
+    de.onclick=()=>{if(confirm('Удалить пресет «'+p.name+'»?')){P.splice(i,1);saveP();listP()}};
+    l.appendChild(r);
+  });
+}
+$('#ps').onclick=()=>{
+  stopEdit();
+  const name=(prompt('Название пресета:')||'').trim();if(!name)return;
+  const p={name,w:S.w,h:S.h,gap:S.gap,els:JSON.parse(JSON.stringify(S.els,rep))};
+  const i=P.findIndex(x=>x.name===name);
+  if(i>=0){if(!confirm('Пресет с таким именем есть. Заменить?'))return;P[i]=p}else P.push(p);
+  saveP();listP();
+};
+$('#pe').onclick=()=>{
+  if(!P.length){log('Нет пресетов для экспорта.');return}
+  const b=new Blob([JSON.stringify({app:'label-print',v:1,presets:P})],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='presets.json';a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+};
+$('#pi').onclick=()=>$('#pf').click();
+$('#pf').onchange=async ev=>{
+  const f=ev.target.files[0];if(!f)return;
+  try{
+    const j=JSON.parse(await f.text()),arr=Array.isArray(j)?j:j.presets;
+    if(!Array.isArray(arr))throw new Error('это не файл пресетов');
+    let n=0;
+    arr.forEach(p=>{
+      if(!p||!p.name||!Array.isArray(p.els))return;
+      const i=P.findIndex(x=>x.name===p.name);if(i>=0)P[i]=p;else P.push(p);n++;
+    });
+    saveP();listP();log('Импортировано пресетов: '+n+' (с одинаковыми именами заменены).');
+  }catch(e){log('Ошибка импорта: '+e.message)}
+  ev.target.value='';
+};
+
+/* ---------- старт: восстанавливаем прошлую работу ---------- */
+const c0=Store.get('lp_cur',null);
+if(c0&&Array.isArray(c0.els)){S.w=c0.w;S.h=c0.h;S.gap=c0.gap;S.els=c0.els}
+else S.els.push({type:'text',text:'Привет',x:8,y:8,size:36,font:'Arial',bold:true,italic:false});
+$('#w').value=S.w;$('#h').value=S.h;$('#gap').value=S.gap;
+resize();props();listP();cur=snap();ub();
+</script>
+</body>
+</html>
