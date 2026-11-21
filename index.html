@@ -46,6 +46,8 @@ canvas{display:block;background:#fff;box-shadow:0 0 0 1px #0004,0 6px 18px #0003
 .pr span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
 .pr button{padding:2px 8px;min-height:30px}
 small{opacity:.7}
+h3{display:flex;justify-content:space-between;align-items:center}
+h3 button{padding:0 8px;min-height:28px}
 pre{margin:0;max-height:110px;overflow:auto;font-size:11px;white-space:pre-wrap}
 </style>
 </head>
@@ -72,10 +74,15 @@ pre{margin:0;max-height:110px;overflow:auto;font-size:11px;white-space:pre-wrap}
     </div>
     <label class="ck"><input id="inv" type="checkbox"> Инвертировать (если печатает негатив)</label>
     <h3>Пресеты</h3>
-    <small>Хранятся в этом браузере сами. Экспорт нужен, чтобы передать другим.</small>
-    <button id="ps">Сохранить текущий как пресет</button>
+    <button id="ps">Сохранить текущий в браузер</button>
+    <h3>☁ Общие (из сети)<button id="pr" title="Обновить список">↻</button></h3>
+    <small id="pns"></small>
+    <div id="pnl"></div>
+    <h3>В этом браузере</h3>
     <div id="pl"></div>
-    <div class="row"><button id="pe">Экспорт всех</button><button id="pi">Импорт</button></div>
+    <div class="row"><button id="pe">Экспорт в файл</button><button id="pi">Импорт из файла</button></div>
+    <button id="pu" title="Собирает presets.json: общие пресеты плюс всё из блока «В этом браузере»">⬆ Файл для сети</button>
+    <small>Чтобы пресеты появились у всех: нажми «Файл для сети» и загрузи presets.json в репозиторий сайта на GitHub.</small>
     <input id="pf" type="file" accept=".json,application/json" hidden>
   </section>
 
@@ -525,32 +532,79 @@ $('#bp').onclick=async()=>{
 };
 
 /* ---------- пресеты ---------- */
-let P=Store.get('lp',[]);
+/* Общие пресеты читаются из файла presets.json рядом с сайтом (его загружают в репозиторий GitHub). */
+let P=Store.get('lp',[]),NP=Store.get('lp_net',[]),RM=Store.get('lp_rm',[]);
 const saveP=()=>Store.set('lp',P);
-function listP(){
-  const l=$('#pl');l.innerHTML=P.length?'':'<i>Пока нет пресетов.</i>';
-  P.forEach((p,i)=>{
-    const r=document.createElement('div');r.className='pr';
-    r.innerHTML=`<span title="${esc(p.name)}">${esc(p.name)}</span><button>Открыть</button><button>✕</button>`;
-    const[lo,de]=r.querySelectorAll('button');
-    lo.onclick=()=>{stopEdit();apply(JSON.parse(JSON.stringify(p)));commit()};
-    de.onclick=()=>{if(confirm('Удалить пресет «'+p.name+'»?')){P.splice(i,1);saveP();listP()}};
-    l.appendChild(r);
-  });
+const cacheNet=()=>{try{localStorage.setItem('lp_net',JSON.stringify(NP))}catch(e){}};
+const ns=t=>$('#pns').textContent=t;
+const openP=p=>{stopEdit();apply(JSON.parse(JSON.stringify(p)));commit()};
+const okP=p=>p&&p.name&&Array.isArray(p.els);
+
+function row(p,btns){
+  const r=document.createElement('div');r.className='pr';
+  r.innerHTML=`<span title="${esc(p.name)}">${esc(p.name)}</span>`;
+  btns.forEach(([t,f,ti])=>{const b=document.createElement('button');b.textContent=t;b.title=ti||'';b.onclick=f;r.appendChild(b)});
+  return r;
 }
+function listP(){
+  const a=$('#pnl'),l=$('#pl');
+  a.innerHTML=NP.length?'':'<i>Пока пусто.</i>';l.innerHTML=P.length?'':'<i>Пока пусто.</i>';
+  NP.forEach(p=>{
+    const gone=RM.includes(p.name);
+    const r=row(p,gone?[['↶ Вернуть',()=>undoRm(p)]]:[['Открыть',()=>openP(p)],['✕',()=>delNet(p),'Убрать из общих']]);
+    if(gone){r.style.opacity='.5';r.querySelector('span').style.textDecoration='line-through'}
+    a.appendChild(r);
+  });
+  P.forEach((p,i)=>l.appendChild(row(p,[['Открыть',()=>openP(p)],['✕',()=>delLoc(i),'Удалить']])));
+}
+function delLoc(i){
+  if(confirm('Удалить пресет «'+P[i].name+'»?')){P.splice(i,1);saveP();listP()}
+}
+function delNet(p){
+  if(!confirm('Убрать пресет «'+p.name+'» из общих? У всех он пропадёт после того, как ты загрузишь новый файл (кнопка «Файл для сети»).'))return;
+  RM.push(p.name);Store.set('lp_rm',RM);listP();
+  ns('Пресет будет убран. Нажми «Файл для сети» и загрузи файл на GitHub.');
+}
+function undoRm(p){RM=RM.filter(n=>n!==p.name);Store.set('lp_rm',RM);listP()}
+
+async function netLoad(manual){
+  try{
+    const r=await fetch('presets.json?t='+Date.now(),{cache:'no-store'});
+    if(r.status===404){NP=[];cacheNet();RM=[];Store.set('lp_rm',RM);listP();ns('Общих пресетов пока нет.');return}
+    if(!r.ok)throw new Error('ответ сервера '+r.status);
+    const j=await r.json(),arr=Array.isArray(j)?j:j&&j.presets;
+    if(!Array.isArray(arr))throw new Error('в presets.json неправильный формат');
+    NP=arr.filter(okP);cacheNet();
+    RM=RM.filter(n=>NP.some(p=>p.name===n));Store.set('lp_rm',RM);
+    listP();ns('Обновлено '+new Date().toLocaleTimeString().slice(0,5));
+  }catch(e){ns('Нет связи, показан последний сохранённый список.');if(manual)log('Сеть: '+er(e))}
+}
+
+async function saveFile(arr){
+  const f=new File([JSON.stringify({app:'label-print',v:1,presets:arr})],'presets.json',{type:'application/json'});
+  try{
+    if(matchMedia('(pointer:coarse)').matches&&navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f]});return}
+  }catch(e){if(e&&e.name==='AbortError')return}
+  const a=document.createElement('a');a.href=URL.createObjectURL(f);a.download='presets.json';a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+
 $('#ps').onclick=()=>{
   stopEdit();
   const name=(prompt('Название пресета:')||'').trim();if(!name)return;
-  const p={name,w:S.w,h:S.h,gap:S.gap,els:JSON.parse(JSON.stringify(S.els,rep))};
-  const i=P.findIndex(x=>x.name===name);
+  const p={name,w:S.w,h:S.h,gap:S.gap,els:JSON.parse(JSON.stringify(S.els,rep))},i=P.findIndex(x=>x.name===name);
   if(i>=0){if(!confirm('Пресет с таким именем есть. Заменить?'))return;P[i]=p}else P.push(p);
   saveP();listP();
 };
-$('#pe').onclick=()=>{
-  if(!P.length){log('Нет пресетов для экспорта.');return}
-  const b=new Blob([JSON.stringify({app:'label-print',v:1,presets:P})],{type:'application/json'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='presets.json';a.click();
-  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+$('#pr').onclick=()=>netLoad(true);
+$('#pe').onclick=()=>{if(!P.length){log('Нет своих пресетов для экспорта.');return}saveFile(P)};
+$('#pu').onclick=()=>{
+  const m=new Map();
+  NP.filter(p=>!RM.includes(p.name)).forEach(p=>m.set(p.name,p));
+  P.forEach(p=>m.set(p.name,p));
+  const arr=[...m.values()];
+  saveFile(arr);
+  ns('Файл готов ('+arr.length+' шт.). Загрузи его на GitHub под именем presets.json.');
 };
 $('#pi').onclick=()=>$('#pf').click();
 $('#pf').onchange=async ev=>{
@@ -560,7 +614,7 @@ $('#pf').onchange=async ev=>{
     if(!Array.isArray(arr))throw new Error('это не файл пресетов');
     let n=0;
     arr.forEach(p=>{
-      if(!p||!p.name||!Array.isArray(p.els))return;
+      if(!okP(p))return;
       const i=P.findIndex(x=>x.name===p.name);if(i>=0)P[i]=p;else P.push(p);n++;
     });
     saveP();listP();log('Импортировано пресетов: '+n+' (с одинаковыми именами заменены).');
@@ -577,7 +631,7 @@ $('#dpi').value=Store.get('lp_dpi',203);$('#dpi').onchange=()=>{Store.set('lp_dp
 snapOn=Store.get('lp_snap',true);
 const sbl=()=>$('#sn').textContent='🧲 Снап: '+(snapOn?'вкл':'выкл');sbl();
 $('#sn').onclick=()=>{snapOn=!snapOn;Store.set('lp_snap',snapOn);sbl()};
-resize();props();listP();cur=snap();ub();
+resize();props();listP();cur=snap();ub();netLoad();
 </script>
 </body>
 </html>
